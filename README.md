@@ -1,6 +1,6 @@
 *Project Structure*
 
-/local/aigrading/
+/local/ai_grading/
 ├── classes/                    # Nơi chứa tất cả các lớp PHP (PSR-4)
 │   ├── controller/             # (Tùy chọn) Chứa các lớp điều khiển
 │   ├── engine/                 # Nơi đặt Processing Engine
