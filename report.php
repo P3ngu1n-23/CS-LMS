@@ -33,12 +33,18 @@ $PAGE->set_heading('Kết quả chấm điểm AI');
 
 if (optional_param('push_grades', false, PARAM_BOOL) && data_submitted() && confirm_sesskey()) {
     
-    // Lấy tất cả các task đã hoàn thành (Status = 2) hoặc đã được GV sửa
-    $sql = "SELECT * FROM {local_aigrading_tasks} 
-            WHERE assignmentid = :assignid 
-            AND (status = 2 OR teacher_grade IS NOT NULL)";
+    // CẬP NHẬT SQL: Chỉ lấy những bản ghi MỚI NHẤT cho từng học sinh
+    $sql = "SELECT t.* FROM {local_aigrading_tasks} t
+            JOIN (
+                SELECT MAX(id) as max_id 
+                FROM {local_aigrading_tasks} 
+                WHERE assignmentid = :assignid1 
+                GROUP BY submissionid
+            ) latest ON t.id = latest.max_id
+            WHERE t.assignmentid = :assignid2 
+            AND (t.status = 2 OR t.teacher_grade IS NOT NULL)";
     
-    $tasks = $DB->get_records_sql($sql, ['assignid' => $assignid]);
+    $tasks = $DB->get_records_sql($sql, ['assignid1' => $assignid, 'assignid2' => $assignid]);
     
     $count_success = 0;
     $count_error = 0;
@@ -66,12 +72,10 @@ if (optional_param('push_grades', false, PARAM_BOOL) && data_submitted() && conf
 
         try {
             // GỌI API CHUẨN CỦA MOODLE
-            // Hàm này sẽ tự động: Lưu vào gradebook, cập nhật log, gửi thông báo cho HS (nếu bật)
             $assign_instance->save_grade($task->userid, $grade_data);
             $count_success++;
         } catch (Exception $e) {
             $count_error++;
-            // Ghi log lỗi nếu cần
         }
     }
 
@@ -99,8 +103,7 @@ echo '<div>';
 echo $OUTPUT->single_button(new moodle_url('/mod/assign/view.php', ['id' => $cmid]), 'Quay lại Assignment', 'get');
 echo '</div>';
 
-// NÚT XÁC NHẬN ĐIỂM (MỚI)
-// Chúng ta bọc trong Form để POST dữ liệu an toàn
+// NÚT XÁC NHẬN ĐIỂM
 echo '<div>';
 echo '<form method="post" action="" class="d-inline" onsubmit="return confirm(\'Bạn có chắc chắn muốn cập nhật điểm này vào Sổ điểm chính thức không?\');">';
 echo '<input type="hidden" name="sesskey" value="' . sesskey() . '">';
@@ -112,16 +115,24 @@ echo '</form>';
 echo '</div>';
 echo '</div>';
 
-// 4. Lấy dữ liệu hiển thị
+// 4. Lấy dữ liệu hiển thị (CẬP NHẬT SQL MỚI)
+// Sử dụng Subquery để lọc lấy dòng có ID lớn nhất (mới nhất) cho mỗi submission
 $sql = "SELECT t.*, 
                u.firstname, u.lastname, u.email,
                u.middlename, u.firstnamephonetic, u.lastnamephonetic, u.alternatename, u.imagealt, u.picture
         FROM {local_aigrading_tasks} t
+        JOIN (
+            SELECT MAX(id) as max_id 
+            FROM {local_aigrading_tasks} 
+            WHERE assignmentid = :assignid1
+            GROUP BY submissionid
+        ) latest ON t.id = latest.max_id
         JOIN {user} u ON u.id = t.userid
-        WHERE t.assignmentid = :assignid
-        ORDER BY t.id DESC";
+        WHERE t.assignmentid = :assignid2
+        ORDER BY u.lastname, u.firstname";
 
-$tasks = $DB->get_records_sql($sql, ['assignid' => $assignid]);
+// Truyền tham số 2 lần vì dùng placeholder 2 chỗ
+$tasks = $DB->get_records_sql($sql, ['assignid1' => $assignid, 'assignid2' => $assignid]);
 
 if (empty($tasks)) {
     echo $OUTPUT->notification('Chưa có dữ liệu chấm điểm AI nào.', 'info');
@@ -169,11 +180,8 @@ if (empty($tasks)) {
         $url_view = new moodle_url('/local/aigrading/grade_view.php', ['id' => $task->id]);
         $btn_action = '';
         
-        if ($task->status == 2 || isset($task->teacher_grade)) {
-            $btn_action = html_writer::link($url_view, 'Xem & Sửa', ['class' => 'btn btn-sm btn-primary']);
-        } else {
-            $btn_action = '<span class="text-muted">...</span>';
-        }
+        // Luôn cho phép xem (kể cả lỗi, để xem lỗi là gì) hoặc nếu đã xong
+        $btn_action = html_writer::link($url_view, 'Xem & Sửa', ['class' => 'btn btn-sm btn-primary']);
 
         $row = [
             fullname($task),

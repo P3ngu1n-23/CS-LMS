@@ -3,16 +3,13 @@ defined('MOODLE_INTERNAL') || die;
 
 $tasks = [
     [
-        // Tên lớp PHP sẽ thực thi
-        'classname' => 'local_aigrading\task\grade_submission', 
+        // SỬA LỖI: Đổi tên class cũ 'grade_submission' thành class mới 'auto_grade_cron'
+        'classname' => 'local_aigrading\task\auto_grade_cron', 
         
-        // Không chặn các cron khác
-        'blocking' => 0, 
-        
-        // Chạy vào phút thứ 0 và 30 của mỗi giờ
-        'minute' => '0,30', 
-        
-        'hour' => '*', // Mỗi giờ
+        // Các cấu hình thời gian (Ví dụ: Chạy mỗi giờ)
+        'blocking' => 0,
+        'minute' => '0', 
+        'hour' => '*',
         'day' => '*',
         'month' => '*',
         'dayofweek' => '*',

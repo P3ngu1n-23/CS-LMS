@@ -1,0 +1,126 @@
+[2025-11-29 10:21:32] ------------------------------------------------
+[2025-11-29 10:21:32] New Callback Request Received
+[2025-11-29 10:21:32] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 143
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:21:32] Found Key in Authorization header.
+[2025-11-29 10:21:32] System Config Key: 'key'
+[2025-11-29 10:21:32] Received Key:      'key'
+[2025-11-29 10:21:32] Task Status: ERROR - Expecting ',' delimiter: line 3 column 438 (char 458)
+[2025-11-29 10:22:26] ------------------------------------------------
+[2025-11-29 10:22:26] New Callback Request Received
+[2025-11-29 10:22:26] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 1172
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:22:26] Found Key in Authorization header.
+[2025-11-29 10:22:26] System Config Key: 'key'
+[2025-11-29 10:22:26] Received Key:      'key'
+[2025-11-29 10:22:26] Task Status: SUCCESS - Score: 80
+[2025-11-29 10:24:11] ------------------------------------------------
+[2025-11-29 10:24:11] New Callback Request Received
+[2025-11-29 10:24:11] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 1003
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:24:11] Found Key in Authorization header.
+[2025-11-29 10:24:11] System Config Key: 'key'
+[2025-11-29 10:24:11] Received Key:      'key'
+[2025-11-29 10:24:11] Task Status: SUCCESS - Score: 85
+[2025-11-29 10:25:16] ------------------------------------------------
+[2025-11-29 10:25:16] New Callback Request Received
+[2025-11-29 10:25:16] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 1477
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:25:16] Found Key in Authorization header.
+[2025-11-29 10:25:16] System Config Key: 'key'
+[2025-11-29 10:25:16] Received Key:      'key'
+[2025-11-29 10:25:16] Task Status: SUCCESS - Score: 85
+[2025-11-29 10:29:44] ------------------------------------------------
+[2025-11-29 10:29:44] New Callback Request Received
+[2025-11-29 10:29:44] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 1052
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:29:44] Found Key in Authorization header.
+[2025-11-29 10:29:44] System Config Key: 'key'
+[2025-11-29 10:29:44] Received Key:      'key'
+[2025-11-29 10:29:44] Task Status: SUCCESS - Score: 85
+[2025-11-29 10:54:53] ------------------------------------------------
+[2025-11-29 10:54:53] New Callback Request Received
+[2025-11-29 10:54:53] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 185
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:54:53] Found Key in Authorization header.
+[2025-11-29 10:54:53] System Config Key: 'key'
+[2025-11-29 10:54:53] Received Key:      'key'
+[2025-11-29 10:54:53] Task Status: SUCCESS - Score: 8
+[2025-11-29 10:58:10] ------------------------------------------------
+[2025-11-29 10:58:10] New Callback Request Received
+[2025-11-29 10:58:10] Headers: Array
+(
+    [Host] => moodle.test
+    [Accept] => */*
+    [Accept-Encoding] => gzip, deflate
+    [Connection] => keep-alive
+    [User-Agent] => python-httpx/0.26.0
+    [Authorization] => Bearer key
+    [Content-Length] => 185
+    [Content-Type] => application/json
+)
+
+[2025-11-29 10:58:10] Found Key in Authorization header.
+[2025-11-29 10:58:10] System Config Key: 'key'
+[2025-11-29 10:58:10] Received Key:      'key'
+[2025-11-29 10:58:10] Task Status: SUCCESS - Score: 8

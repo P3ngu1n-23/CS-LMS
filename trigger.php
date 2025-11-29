@@ -32,13 +32,31 @@ if (optional_param('submit_grading', false, PARAM_BOOL) && data_submitted() && c
     $selected_submissions = optional_param_array('submissions', [], PARAM_INT);
 
     if (!empty($selected_submissions)) {
-        $count = local_aigrading_add_to_queue($assignid, $USER, $selected_submissions);
+        // Gọi hàm xử lý mới
+        $result = local_aigrading_add_to_queue($assignid, $USER, $selected_submissions);
         
-        if ($count > 0) {
-            \core\notification::add("Đã thêm thành công $count bài vào hàng đợi chấm điểm. Hệ thống sẽ xử lý ngầm.", 'notifysuccess');
-        } else {
-            \core\notification::add("Các bài đã chọn đều đã nằm trong hàng đợi hoặc đã được chấm xong.", 'notifywarning');
+        $msg_parts = [];
+        $type = 'notifysuccess';
+
+        if ($result['queued'] > 0) {
+            $msg_parts[] = "Đã xếp hàng <b>{$result['queued']}</b> yêu cầu chấm điểm.";
         }
+        
+        if ($result['timeout_reset'] > 0) {
+            $msg_parts[] = "Đã khởi động lại <b>{$result['timeout_reset']}</b> bài bị treo quá 5 phút.";
+        }
+
+        if ($result['skipped'] > 0) {
+            $msg_parts[] = "Đã bỏ qua <b>{$result['skipped']}</b> bài vì đang được AI xử lý (vui lòng chờ kết quả).";
+            if ($result['queued'] == 0 && $result['timeout_reset'] == 0) {
+                $type = 'notifywarning'; // Nếu chỉ toàn bài bị skip thì cảnh báo
+            }
+        }
+
+        $final_msg = implode('<br>', $msg_parts);
+        if (empty($final_msg)) $final_msg = "Không có thay đổi nào.";
+
+        \core\notification::add($final_msg, $type);
     } else {
         \core\notification::add("Vui lòng chọn ít nhất một bài nộp.", 'notifyproblem');
     }
@@ -54,7 +72,7 @@ if (optional_param('submit_grading', false, PARAM_BOOL) && data_submitted() && c
 
 echo $OUTPUT->header();
 
-// A. Lấy danh sách học sinh
+// A. Lấy danh sách học sinh đã nộp bài
 $sql = "SELECT s.id, 
                u.firstname, u.lastname, u.email, 
                u.middlename, u.firstnamephonetic, u.lastnamephonetic, u.alternatename, u.imagealt, u.picture,
@@ -68,19 +86,36 @@ $sql = "SELECT s.id,
 
 $submissions = $DB->get_records_sql($sql, ['assignid' => $assignid, 'status' => 'submitted']);
 
-// B. Lấy trạng thái hàng đợi
+// B. LẤY TRẠNG THÁI HÀNG ĐỢI (LOGIC MỚI: ƯU TIÊN THÀNH CÔNG)
 $task_sql = "SELECT id, submissionid, status, parsed_grade 
              FROM {local_aigrading_tasks} 
              WHERE assignmentid = :assignid 
-             ORDER BY id ASC";
+             ORDER BY id ASC"; // Duyệt từ cũ đến mới
 $all_tasks = $DB->get_records_sql($task_sql, ['assignid' => $assignid]);
 
-$queued_status = [];
-$queued_grades = [];
+// Mảng lưu trạng thái tốt nhất cho từng submission
+$best_tasks = [];
+
 foreach ($all_tasks as $task) {
-    $queued_status[$task->submissionid] = $task->status;
-    if ($task->status == 2) {
-        $queued_grades[$task->submissionid] = $task->parsed_grade;
+    $sid = $task->submissionid;
+    
+    if (!isset($best_tasks[$sid])) {
+        // Chưa có thì lấy luôn
+        $best_tasks[$sid] = $task;
+    } else {
+        $current_best = $best_tasks[$sid];
+        
+        // LOGIC ƯU TIÊN:
+        // 1. Nếu task mới là Success (2) -> Luôn lấy (Ghi đè cũ).
+        // 2. Nếu task cũ KHÔNG PHẢI Success (0,1,3) -> Lấy task mới (bất kể status gì) để cập nhật trạng thái mới nhất.
+        // 3. Nếu task cũ LÀ Success (2) và task mới KHÔNG PHẢI Success -> GIỮ NGUYÊN task cũ.
+        
+        if ($task->status == 2) {
+            $best_tasks[$sid] = $task;
+        } elseif ($current_best->status != 2) {
+            $best_tasks[$sid] = $task;
+        }
+        // Trường hợp còn lại: Cũ là Success, Mới là Pending/Error -> Giữ cái cũ.
     }
 }
 
@@ -98,7 +133,6 @@ if (empty($submissions)) {
     // --- THANH CÔNG CỤ ---
     echo '<div class="mb-3 d-flex justify-content-between align-items-center bg-light p-2 rounded border">';
     
-    // Nhóm nút chọn nhanh
     echo '<div>';
     echo '<span class="font-weight-bold mr-2">Chọn nhanh:</span>';
     echo '<button type="button" class="btn btn-sm btn-outline-primary mr-1" id="btn-select-ungraded">Chưa chấm</button>';
@@ -106,12 +140,11 @@ if (empty($submissions)) {
     echo '<button type="button" class="btn btn-sm btn-outline-danger" id="btn-deselect-all">Bỏ chọn</button>';
     echo '</div>';
 
-    // Nút Quay lại
     echo '<div>';
     echo '<a href="' . new moodle_url('/mod/assign/view.php', ['id' => $cmid]) . '" class="btn btn-sm btn-secondary">Quay lại Assignment</a>';
     echo '</div>';
     
-    echo '</div>'; // End toolbar
+    echo '</div>';
 
     $table = new html_table();
     $table->head = [
@@ -123,31 +156,27 @@ if (empty($submissions)) {
     ];
 
     foreach ($submissions as $sub) {
-        $status_code = isset($queued_status[$sub->id]) ? $queued_status[$sub->id] : -1;
+        // Lấy task "tốt nhất" đã lọc ở trên
+        $task = isset($best_tasks[$sub->id]) ? $best_tasks[$sub->id] : null;
+        $status_code = $task ? $task->status : -1;
         
         $badge = '<span class="badge badge-secondary">Chưa chấm</span>';
         $row_class = '';
         
-        // 0: Pending, 1: Processing, 2: Success, 3: Error
         if ($status_code == 0) {
             $badge = '<span class="badge badge-warning">Đang chờ</span>';
         } elseif ($status_code == 1) {
             $badge = '<span class="badge badge-info">Đang xử lý</span>';
         } elseif ($status_code == 2) {
-            
-            // --- SỬA LỖI HIỂN THỊ SỐ 0 Ở ĐÂY ---
-            $raw_grade = isset($queued_grades[$sub->id]) ? $queued_grades[$sub->id] : 0;
-            
-            // Dùng hàm round(số, 1) để làm tròn 1 chữ số thập phân.
-            // Ví dụ: 8.56 -> 8.6 | 9.000 -> 9
+            $raw_grade = isset($task->parsed_grade) ? $task->parsed_grade : 0;
             $grade = round($raw_grade, 1);
-
             $badge = '<span class="badge badge-success">Hoàn tất (' . $grade . 'đ)</span>';
             $row_class = 'table-success'; 
         } elseif ($status_code == 3) {
             $badge = '<span class="badge badge-danger">Lỗi</span>';
         }
 
+        // data-status dùng cho JS chọn nhanh
         $checkbox = '<input type="checkbox" name="submissions[]" value="' . $sub->id . '" class="submission-check" data-status="' . $status_code . '">';
 
         $row = [

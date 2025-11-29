@@ -49,3 +49,14 @@ Bạn có thể xem chi tiết và duyệt điểm tại đường dẫn sau:
 
 Trân trọng,
 AI Grading Plugin.';
+$string['enable_autograde'] = 'Tự động chấm khi hết hạn (Due Date)';
+$string['enable_autograde_help'] = 'Nếu bật tùy chọn này, hệ thống sẽ tự động quét và đưa các bài nộp vào hàng đợi chấm điểm của AI ngay khi thời hạn nộp bài (Due Date) kết thúc. Lưu ý: Cron của hệ thống phải được cấu hình để chạy tác vụ này.';
+
+$string['reference_file'] = 'File Đáp án mẫu (Reference)';
+$string['reference_file_help'] = 'Bạn có thể tải lên tệp chứa đáp án đúng, thang điểm chi tiết hoặc tài liệu tham khảo (định dạng PDF, DOCX, TXT). AI sẽ đọc nội dung tệp này để làm căn cứ so sánh và chấm điểm bài làm của học sinh chính xác hơn.';
+
+$string['reference_text'] = 'Đáp án mẫu (Văn bản)';
+$string['reference_text_help'] = 'Bạn có thể nhập hoặc dán trực tiếp nội dung đáp án, barem điểm vào đây. AI sẽ ưu tiên sử dụng nội dung này kết hợp với file đính kèm (nếu có) để chấm bài.';
+
+$string['teacher_instruction'] = 'Hướng dẫn chấm (Prompt)';
+$string['teacher_instruction_help'] = 'Tại đây bạn có thể nhập các chỉ đạo cụ thể cho AI. Ví dụ: "Hãy chú trọng vào lỗi logic", "Trừ điểm nặng nếu sai chính tả", hoặc "Bỏ qua lỗi định dạng". AI sẽ kết hợp hướng dẫn này với đáp án mẫu để chấm bài.';
