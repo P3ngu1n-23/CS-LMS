@@ -11,7 +11,7 @@ if ($hassiteconfig) {
         'AI Base URL',
         'Ví dụ: http://localhost:8000 hoặc http://ai-service:8000',
         'http://localhost:8000',
-        PARAM_URL
+        PARAM_RAW_TRIMMED
     );
     $settings->add($setting);
 
