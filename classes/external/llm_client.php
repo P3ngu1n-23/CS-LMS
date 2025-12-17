@@ -5,92 +5,68 @@ defined('MOODLE_INTERNAL') || die;
 
 class llm_client {
 
-    private $base_url;
-    private $api_key;
-
-    // Endpoint chấm điểm của FastAPI
-    const ENDPOINT_GRADING = '/api/v1/grading/async-batch';
-
-    public function __construct() {
-        $config = get_config('local_aigrading');
-        $this->base_url = rtrim($config->apiendpoint, '/');
-        $this->api_key = $config->apikey;
-    }
-
     /**
-     * Gửi yêu cầu chấm điểm (Async)
-     * @param array $text_data Dữ liệu text (content, instructions, callback_url...)
-     * @param array $file_data Dữ liệu file (Moodle stored_file objects)
+     * Gửi request dạng JSON sang FastAPI
+     * @param array $payload Mảng dữ liệu đã chuẩn hóa (khớp với Pydantic Model)
      */
-    public function send_grading_request($text_data, $file_data) {
-        $url = $this->base_url . self::ENDPOINT_GRADING;
-        return $this->send_multipart($url, $text_data, $file_data);
-    }
+    public function send_grading_request($payload) {
+        global $CFG;
 
-    private function send_multipart($url, $text_data, $file_data) {
-        $curl = curl_init();
-        $post_fields = [];
-        $temp_files = [];
+        $api_base = get_config('local_aigrading', 'apiendpoint');
+        $url = rtrim($api_base, '/') . '/api/v1/grading/async-batch';
 
-        // 1. Pack Text Data
-        foreach ($text_data as $key => $value) {
-            $post_fields[$key] = $value;
+        // 1. Mã hóa JSON
+        $json_data = json_encode($payload);
+        if ($json_data === false) {
+            return ['success' => false, 'message' => 'JSON Encode Error: ' . json_last_error_msg()];
         }
 
-        // 2. Pack File Data (Convert Moodle File -> CURLFile)
-        foreach ($file_data as $field_name => $files) {
-            if (empty($files)) continue;
-            foreach ($files as $index => $stored_file) {
-                // Tạo file tạm vật lý
-                $temp_dir = make_request_directory();
-                $temp_path = $temp_dir . '/' . $stored_file->get_filename();
-                $stored_file->copy_content_to($temp_path);
-                $temp_files[] = $temp_path;
-
-                // Tạo CURLFile
-                $cfile = new \CURLFile($temp_path, $stored_file->get_mimetype(), $stored_file->get_filename());
-                // FastAPI nhận list file: field_name (không cần index nếu dùng List[UploadFile])
-                // PHP Curl yêu cầu array key nếu gửi nhiều file cùng tên field
-                $post_fields["{$field_name}[{$index}]"] = $cfile;
-            }
-        }
-
-        // 3. Headers & Security
-        $headers = ['Content-Type: multipart/form-data'];
-        if (!empty($this->api_key)) {
-            // Gửi Shared Secret để FastAPI biết request này từ Moodle chính chủ
-            $headers[] = 'X-Secret-Key: ' . $this->api_key;
-        }
-
-        // 4. Config CURL
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => $post_fields,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_TIMEOUT => 30, // Timeout ngắn vì chỉ cần gửi đi (FastAPI trả về 202 Accepted ngay)
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-        ]);
-
-        $response = curl_exec($curl);
-        $http_code = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        $err = curl_error($curl);
-        curl_close($curl);
-
-        // Cleanup temp files
-        foreach ($temp_files as $path) {
-            if (file_exists($path)) @unlink($path);
-        }
-
-        if ($err) return ['success' => false, 'message' => "cURL Error: $err"];
+        // 2. Cấu hình cURL
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         
-        // Chấp nhận mã 200 (OK) hoặc 202 (Accepted)
+        // Cấu hình SSL (Tắt cho môi trường Dev)
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+
+        // 3. Headers (Bắt buộc Content-Type: application/json)
+        $headers = [
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'Content-Length: ' . strlen($json_data)
+        ];
+        
+        $apikey = get_config('local_aigrading', 'apikey');
+        if (!empty($apikey)) {
+            $headers[] = 'X-Secret-Key: ' . $apikey;
+        }
+
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+        // 4. Thực thi
+        $response = curl_exec($ch);
+        $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error_msg = curl_error($ch);
+        curl_close($ch);
+
+        if ($error_msg) {
+            return ['success' => false, 'message' => "cURL Error: $error_msg"];
+        }
+
         if ($http_code >= 200 && $http_code < 300) {
             return ['success' => true, 'message' => 'Request sent successfully'];
         }
 
         return ['success' => false, 'message' => "API Error ($http_code): $response"];
+    }
+    
+    public function is_configured() {
+        $endpoint = get_config('local_aigrading', 'apiendpoint');
+        return !empty($endpoint);
     }
 }

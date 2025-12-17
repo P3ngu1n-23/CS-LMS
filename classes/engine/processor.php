@@ -5,32 +5,58 @@ defined('MOODLE_INTERNAL') || die;
 
 class processor {
 
-    /**
-     * Xử lý chính: Thu thập dữ liệu và gửi sang AI
-     *
-     * @param stdClass $task Đối tượng task từ DB (đã bao gồm id, assignmentid, submissionid)
-     * @return array Trạng thái gửi
-     */
-    public function process_submission($task) {
+    private function save_file_to_disk($stored_file, $request_id) {
+        global $CFG;
+
+        if ($stored_file->is_directory()) {
+            return null;
+        }
+
+        $temp_dir = $CFG->dataroot . '/local_aigrading_temp/' . $request_id;
+        
+        if (!file_exists($temp_dir)) {
+            mkdir($temp_dir, 0777, true);
+        }
+
+        $filename = $stored_file->get_filename();
+        $clean_filename = clean_param($filename, PARAM_FILE);
+        $target_path = $temp_dir . '/' . $clean_filename;
+
+        $stored_file->copy_content_to($target_path);
+
+        return $target_path;
+    }
+
+    private function process_file_list($files, $request_id) {
+        $paths = [];
+        foreach ($files as $f) {
+            $path = $this->save_file_to_disk($f, $request_id);
+            if ($path) {
+                $paths[] = $path;
+            }
+        }
+        return $paths;
+    }
+
+    public function prepare_payload($task) {
         global $DB;
 
-        // Lấy ID từ đối tượng task được truyền vào (QUAN TRỌNG: Không query lại DB để tìm ID nữa)
-        $taskid = $task->id; 
         $assignmentid = $task->assignmentid;
         $submissionid = $task->submissionid;
+        
+        $request_id_folder = $submissionid . '_' . time(); 
+        $request_id_tracking = $task->unique_request_id ?? \core\uuid::generate();
 
-        // 1. Lấy dữ liệu Assignment & Context
         $assign = $DB->get_record('assign', ['id' => $assignmentid], '*', MUST_EXIST);
         $cm = get_coursemodule_from_instance('assign', $assignmentid);
         $context = \context_module::instance($cm->id);
 
-        // 2. Nội dung đề bài & File đề bài
         $intro_text = strip_tags($assign->intro);
         $fs = get_file_storage();
+        
         $assign_files = $fs->get_area_files($context->id, 'mod_assign', 'intro', 0, 'sortorder', false);
-        $assign_files = array_filter($assign_files, function($f) { return !$f->is_directory(); });
+        $assign_file_paths = $this->process_file_list($assign_files, $request_id_folder);
 
-        // 3. Nội dung bài làm & File bài làm
         $submission_text = "";
         $onlinetext = $DB->get_record('assignsubmission_onlinetext', ['submission' => $submissionid]);
         if ($onlinetext) {
@@ -38,75 +64,71 @@ class processor {
         }
 
         $sub_files = $fs->get_area_files($context->id, 'assignsubmission_file', 'submission_files', $submissionid, 'sortorder', false);
-        $sub_files = array_filter($sub_files, function($f) { return !$f->is_directory(); });
+        $sub_file_paths = $this->process_file_list($sub_files, $request_id_folder);
 
-        // 4. Lấy Cấu hình AI
         $ai_config = $DB->get_record('local_aigrading_config', ['assignmentid' => $assignmentid]);
-        
         $reference_text_content = "";
-        $explicit_instruction = ""; // Biến lưu hướng dẫn giáo viên
-
+        $explicit_instruction = "";
+        $grading_criteria = ""; 
+        
         if ($ai_config) {
-            if (!empty($ai_config->reference_text)) {
-                $reference_text_content = $ai_config->reference_text;
-            }
-            // Lấy hướng dẫn từ config
-            if (!empty($ai_config->teacher_instruction)) {
-                $explicit_instruction = $ai_config->teacher_instruction;
-            }
+            $reference_text_content = $ai_config->reference_text ?? "";
+            $explicit_instruction = $ai_config->teacher_instruction ?? "";
         }
         
         $reference_files = $fs->get_area_files($context->id, 'local_aigrading', 'reference_file', 0, 'sortorder', false);
-        $reference_files = array_filter($reference_files, function($f) { return !$f->is_directory(); });
+        
+        $reference_file_path = null;
+        foreach ($reference_files as $rf) {
+            if (!$rf->is_directory()) {
+                $reference_file_path = $this->save_file_to_disk($rf, $request_id_folder);
+                break; 
+            }
+        }
 
-        // 5. Lấy RAG Context (Lịch sử)
         $rag_history = $this->get_teacher_history($assignmentid);
-
         $final_instruction = "";
-        
-        if (!empty($explicit_instruction)) {
-            $final_instruction .= "YÊU CẦU CỤ THỂ CỦA GIÁO VIÊN:\n" . $explicit_instruction . "\n\n";
-        }
-        
-        if (!empty($rag_history)) {
-            $final_instruction .= $rag_history;
+        if (!empty($explicit_instruction)) $final_instruction .= "YÊU CẦU GIÁO VIÊN:\n" . $explicit_instruction . "\n\n";
+        if (!empty($rag_history)) $final_instruction .= $rag_history;
+
+        $callback_url_str = "http://DEBUG_MODE_NO_CALLBACK";
+        if (!empty($task->secret_token)) {
+             $cb = new \moodle_url('/local/aigrading/api/callback.php', ['token' => $task->secret_token]);
+             $callback_url_str = $cb->out(false);
         }
 
-        // 6. Cập nhật Token (SỬA ĐỔI QUAN TRỌNG)
-        // Chúng ta cập nhật trực tiếp vào ID của task đang xử lý, không quan tâm có bao nhiêu task khác của submission này.
-        
+        return [
+            'callback_url'             => $callback_url_str,
+            'request_id'               => $request_id_tracking,
+            'assignment_content'       => $intro_text,
+            'assignment_attachments'   => $assign_file_paths,
+            'student_submission_text'  => $submission_text,
+            'student_submission_files' => $sub_file_paths,
+            'reference_answer_text'    => $reference_text_content,
+            'reference_answer_file'    => $reference_file_path,
+            'grading_criteria'         => $grading_criteria,
+            'teacher_instruction'      => $final_instruction,
+            'max_score'                => (float)$assign->grade
+        ];
+    }
+
+    public function process_submission($task) {
+        global $DB;
+
         $task_token = bin2hex(random_bytes(32));
         $task->secret_token = $task_token;
         
-        // Chỉ cập nhật dòng này trong DB
-        try {
-            $DB->update_record('local_aigrading_tasks', $task);
-        } catch (\Exception $e) {
-            throw new \Exception("DB Error: Không thể cập nhật token cho Task ID {$taskid}. " . $e->getMessage());
+        if (empty($task->unique_request_id)) {
+            $task->unique_request_id = \core\uuid::generate();
         }
+        
+        $DB->update_record('local_aigrading_tasks', $task);
 
-        $callback_url = new \moodle_url('/local/aigrading/api/callback.php', ['token' => $task_token]);
+        $payload = $this->prepare_payload($task);
 
-        // 7. Mapping dữ liệu
-        $text_data = [
-            'callback_url' => $callback_url->out(false),
-            'assignment_content' => $intro_text,
-            'student_submission_text' => $submission_text,
-            'reference_answer_text' => $reference_text_content, 
-            'grading_criteria' => "", 
-            'teacher_instruction' => $final_instruction,
-            'max_score' => (float)$assign->grade
-        ];
-
-        $file_data = [
-            'assignment_attachments' => $assign_files,
-            'student_submission_files' => $sub_files,
-            'reference_answer_file' => $reference_files
-        ];
-
-        // 8. Gửi đi
         $client = new \local_aigrading\external\llm_client();
-        $result = $client->send_grading_request($text_data, $file_data);
+        
+        $result = $client->send_grading_request($payload);
 
         if (!$result['success']) {
             throw new \Exception($result['message']);
@@ -115,13 +137,9 @@ class processor {
         return ['status' => 'sent'];
     }
 
-    /**
-     * Lấy các ghi chú của giáo viên từ các lần chấm trước để làm context (RAG)
-     */
     private function get_teacher_history($assignid) {
         global $DB;
         
-        // Chỉ lấy những bài đã có điểm GV và có ghi chú (teacher_notes)
         $sql = "SELECT teacher_notes FROM {local_aigrading_tasks} 
                 WHERE assignmentid = :aid 
                   AND teacher_grade IS NOT NULL 
@@ -129,7 +147,6 @@ class processor {
                   AND teacher_notes != ''
                 ORDER BY timemodified DESC";
         
-        // Lấy tối đa 3 ví dụ gần nhất
         $recs = $DB->get_records_sql($sql, ['aid' => $assignid], 0, 3);
         
         $txt = "";

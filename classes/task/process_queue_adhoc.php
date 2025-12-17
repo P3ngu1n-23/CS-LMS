@@ -42,7 +42,13 @@ class process_queue_adhoc extends \core\task\adhoc_task {
                 mtrace("-> Đã gửi request sang AI (ID {$task->id}). Đang chờ Callback...");
 
             } catch (\Exception $e) {
-                // ... (Xử lý lỗi giữ nguyên) ...
+                $task->status = 3; // Chuyển sang trạng thái Lỗi
+                $task->error_message = $e->getMessage(); // Lưu lý do lỗi (ví dụ: "API Error: 404 Not Found")
+                $task->timemodified = time();
+                
+                $DB->update_record('local_aigrading_tasks', $task);
+                
+                mtrace("-> Gửi thất bại & Đã hủy task: ID {$task->id} - " . $e->getMessage());
             }
         }
 
