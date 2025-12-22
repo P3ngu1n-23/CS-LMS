@@ -86,9 +86,7 @@ class observer {
             // 3. Chuẩn bị payload gửi đi
             $payload = [
                 'file_path' => $real_path,         // Backend đọc đường dẫn này
-                'course_id' => (string)$course_id,
-                'filename'  => $filename,          // Tên hiển thị
-                'mime_type' => $target_file->get_mimetype()
+                'course_id' => (string)$course_id
             ];
 
             // 4. Gửi API
