@@ -79,10 +79,12 @@ if (!empty($system_key)) {
 // 4. XỬ LÝ DỮ LIỆU
 // ============================================================================
 $raw_body = file_get_contents('php://input');
-$data = json_decode($raw_body, true);
+$json_data = json_decode($raw_body, true);
 $token = optional_param('token', '', PARAM_ALPHANUM);
 
-if (empty($token) || empty($data)) {
+local_aigrading_write_log("Payload received length: " . strlen($raw_body));
+
+if (empty($token) || empty($json_data)) {
     local_aigrading_write_log("ERROR: 400 Bad Request. Missing token or body.");
     http_response_code(400);
     die(json_encode(['status' => 'error', 'message' => 'Missing token or body']));
@@ -90,10 +92,8 @@ if (empty($token) || empty($data)) {
 
 global $DB;
 
-// Tìm task
-$sql = "SELECT * FROM {local_aigrading_tasks} WHERE secret_token = :token AND status = 1";
-$tasks = $DB->get_records_sql($sql, ['token' => $token], 0, 1);
-$task = reset($tasks);
+// Tìm task theo token
+$task = $DB->get_record('local_aigrading_tasks', ['secret_token' => $token], '*', IGNORE_MISSING);
 
 if (!$task) {
     local_aigrading_write_log("ERROR: 404 Task not found for token: $token");
@@ -102,24 +102,51 @@ if (!$task) {
 }
 
 try {
+    // --- PHÂN TÍCH CẤU TRÚC JSON MỚI ---
+    // Cấu trúc từ Python WebhookPayload:
+    // {
+    //    "status": "success" | "error",
+    //    "system_error": "...",
+    //    "data": { "score": 8.5, "feedback": "...", "error": "..." }
+    // }
+
+    $status = $json_data['status'] ?? 'error';
+    $result_data = $json_data['data'] ?? [];
+    $system_error = $json_data['system_error'] ?? null;
+    $logic_error = $result_data['error'] ?? null;
+
     $update = new stdClass();
     $update->id = $task->id;
     $update->timemodified = time();
+    $update->ai_response_raw = $raw_body; // Lưu log raw để debug sau này
 
-    if (!empty($data['error'])) {
-        $update->status = 3; 
-        $update->error_message = is_string($data['error']) ? $data['error'] : json_encode($data['error']);
-        local_aigrading_write_log("Task Status: ERROR - " . $update->error_message);
-    } else {
-        $update->status = 2; 
-        $update->ai_response_raw = $raw_body;
-        $update->parsed_grade = isset($data['score']) ? (float)$data['score'] : 0;
-        $update->parsed_feedback = isset($data['feedback']) ? $data['feedback'] : '';
+    // 1. Kiểm tra lỗi (System Error hoặc Logic Error từ AI)
+    if ($status === 'error' || !empty($system_error) || !empty($logic_error)) {
+        $final_msg = $system_error ?? $logic_error ?? 'Unknown error';
+        
+        $update->status = 3; // 3 = ERROR
+        $update->error_message = is_string($final_msg) ? $final_msg : json_encode($final_msg);
+        
+        local_aigrading_write_log("Task Status: FAILED - " . $update->error_message);
+    } 
+    // 2. Thành công -> Lưu điểm vào bảng AI (KHÔNG lưu vào sổ điểm Moodle)
+    else {
+        $update->status = 2; // 2 = COMPLETED (AI đã chấm xong)
+        
+        // Lấy điểm và feedback từ object 'data'
+        $update->parsed_grade = isset($result_data['score']) ? (float)$result_data['score'] : 0;
+        $update->parsed_feedback = isset($result_data['feedback']) ? $result_data['feedback'] : '';
+        
+        // Clear lỗi cũ nếu có
+        $update->error_message = null; 
+
         local_aigrading_write_log("Task Status: SUCCESS - Score: " . $update->parsed_grade);
     }
 
+    // Cập nhật Database
     $DB->update_record('local_aigrading_tasks', $update);
 
+    // Gửi thông báo realtime (nếu plugin hỗ trợ)
     if (function_exists('local_aigrading_check_and_notify')) {
         local_aigrading_check_and_notify($task->assignmentid);
     }

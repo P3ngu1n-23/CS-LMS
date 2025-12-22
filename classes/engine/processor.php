@@ -98,6 +98,7 @@ class processor {
         }
 
         return [
+            'course_id'                => $assign->course,
             'callback_url'             => $callback_url_str,
             'request_id'               => $request_id_tracking,
             'assignment_content'       => $intro_text,
