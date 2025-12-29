@@ -10,24 +10,22 @@ $taskid = required_param('id', PARAM_INT);
 $task = $DB->get_record('local_aigrading_tasks', ['id' => $taskid], '*', MUST_EXIST);
 $assign = $DB->get_record('assign', ['id' => $task->assignmentid], '*', MUST_EXIST);
 
-// Lấy Course Module (CM) và Course (Bắt buộc để sửa lỗi Navigation)
+// Lấy Course Module (CM) và Course
 $cm = get_coursemodule_from_instance('assign', $assign->id);
-$course = $DB->get_record('course', ['id' => $assign->course], '*', MUST_EXIST); // <-- THÊM DÒNG NÀY
+$course = $DB->get_record('course', ['id' => $assign->course], '*', MUST_EXIST);
 $context = \context_module::instance($cm->id);
 
-// 3. Kiểm tra quyền (SỬA LỖI: Truyền $course và $cm vào đây)
+// 3. Kiểm tra quyền
 require_login($course, false, $cm); 
 require_capability('mod/assign:grade', $context);
 
-// 4. Xử lý Form Submit (Lưu điểm)
+// 4. Xử lý Form Submit (Lưu điểm) - KHÔNG ĐỔI
 if (optional_param('save_grade', false, PARAM_BOOL) && data_submitted() && confirm_sesskey()) {
     
     $new_grade = required_param('teacher_grade', PARAM_FLOAT);
-    // PARAM_RAW cho phép lưu HTML (nhưng Moodle sẽ clean XSS)
     $new_feedback = required_param('teacher_feedback', PARAM_RAW);
     $notes = optional_param('teacher_notes', '', PARAM_TEXT);
 
-    // Cập nhật DB
     $update_obj = new stdClass();
     $update_obj->id = $task->id;
     $update_obj->teacher_grade = $new_grade;
@@ -45,12 +43,11 @@ if (optional_param('save_grade', false, PARAM_BOOL) && data_submitted() && confi
 $url = new moodle_url('/local/aigrading/grade_view.php', ['id' => $taskid]);
 $PAGE->set_url($url);
 $PAGE->set_context($context);
-$PAGE->set_cm($cm); // Báo cho Moodle biết trang này thuộc module nào (Fix lỗi navigation phụ)
+$PAGE->set_cm($cm); 
 
 $PAGE->set_title('Chi tiết chấm điểm AI');
 $PAGE->set_heading('Chi tiết & Điều chỉnh điểm số');
 
-// Thêm Breadcrumb (Thanh điều hướng)
 $PAGE->navbar->add('Kết quả chấm AI', new moodle_url('/local/aigrading/report.php', ['id' => $assign->id, 'cmid' => $cm->id]));
 $PAGE->navbar->add('Xem chi tiết');
 
@@ -62,7 +59,7 @@ $user = $DB->get_record('user', ['id' => $task->userid]);
 $onlinetext = $DB->get_record('assignsubmission_onlinetext', ['submission' => $task->submissionid]);
 $student_content = $onlinetext ? $onlinetext->onlinetext : '<i>(Không có nội dung văn bản trực tuyến)</i>';
 
-// Xác định giá trị hiển thị
+// Xác định giá trị hiển thị cho FORM
 $current_grade = isset($task->teacher_grade) ? $task->teacher_grade : $task->parsed_grade;
 $current_feedback = isset($task->teacher_feedback) ? $task->teacher_feedback : $task->parsed_feedback;
 $current_notes = $task->teacher_notes;
@@ -100,7 +97,20 @@ $current_notes = $task->teacher_notes;
                     <div>
                         <strong>Nhận xét:</strong><br>
                         <div class="p-2 bg-light border rounded">
-                            <?php echo format_text($task->parsed_feedback, FORMAT_MARKDOWN); ?>
+                            <?php 
+                            // --- BẮT ĐẦU SỬA ĐỔI ---
+                            if (!empty($task->error_message)) {
+                                // Nếu có lỗi, hiển thị text đỏ
+                                echo '<div class="text-danger">';
+                                echo '<i class="fa fa-exclamation-triangle"></i> <strong>Lỗi xử lý AI:</strong><br>';
+                                echo format_text($task->error_message, FORMAT_HTML);
+                                echo '</div>';
+                            } else {
+                                // Nếu không lỗi, hiển thị feedback bình thường
+                                echo format_text($task->parsed_feedback, FORMAT_MARKDOWN);
+                            }
+                            // --- KẾT THÚC SỬA ĐỔI ---
+                            ?>
                         </div>
                     </div>
                 </div>
